@@ -3,8 +3,8 @@ import { getStats, getStatus } from '../controllers/AppController';
 
 const router = express.Router();
 
-router.get('/status', getStats);
+router.get('/status', getStatus);
 
-router.get('/stats', getStatus);
+router.get('/stats', getStats);
 
 export default router;
