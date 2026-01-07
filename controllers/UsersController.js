@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import dbClient from '../utils/db';
 
-const postNew = async (req, res) => {
+export const postNew = async (req, res) => {
   const { email, password } = req.body;
 
   if (!email) {
@@ -39,4 +39,5 @@ const postNew = async (req, res) => {
   }
 };
 
-export default postNew;
+export const getMe = async (req, res) => {
+};
