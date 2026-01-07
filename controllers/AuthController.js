@@ -9,11 +9,19 @@ export const getConnect = async (req, res) => {
   const base64Req = headerAuth.split('Basic ')[1];
 
   // Decode base64 encoding
-  const decodedBuffer = Buffer.from(base64Req, 'base64');
-  const decodedStr = decodedBuffer.toString('utf-8');
+  let decodedStr;
+  try {
+    decodedStr = Buffer.from(base64Req, 'base64').toString('utf-8');
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   // Separate the string
   const [email, password] = decodedStr.split(':');
+  if (!email || !password) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const hashedPassword = crypto
     .createHash('sha1')
     .update(password)
