@@ -62,13 +62,19 @@ const postUpload = async (req, res) => {
 
     try {
       // Base path
-      const path = process.env.FOLDER_PATH || DEFAULT_PATH;
-      const folderPath = file ? file.localPath : path;
+      const basePath = process.env.FOLDER_PATH || DEFAULT_PATH;
 
+      // Determine folder path based on parent
+      let folderPath;
+      if (file && file.localPath) {
+        folderPath = file.localPath;
+      } else {
+        folderPath = basePath;
+      }
       // Ensure folder exists
       await mkdir(folderPath, { recursive: true });
 
-      // Create folder or file path
+      // Create the new folder or file path
       const localPath = `${folderPath}/${uuidv4()}`;
 
       if (filePayload.type === 'folder') {
