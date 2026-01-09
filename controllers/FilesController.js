@@ -61,7 +61,21 @@ const postUpload = async (req, res) => {
     }
 
     try {
+      // Base path
+      const path = process.env.FOLDER_PATH || DEFAULT_PATH;
+      const folderPath = file ? file.localPath : path;
+
+      // Ensure folder exists
+      await mkdir(folderPath, { recursive: true });
+
+      // Create folder or file path
+      const localPath = `${folderPath}/${uuidv4()}`;
+
       if (filePayload.type === 'folder') {
+        // Just create the folder on disk
+        await mkdir(localPath, { recursive: true });
+
+        // Insert in DB with parentId always '0'
         const folderInserted = await filesCollection.insertOne({
           userId: user._id,
           name: filePayload.name,
@@ -78,21 +92,14 @@ const postUpload = async (req, res) => {
           parentId: Number(folderInserted.ops[0].parentId),
         });
       }
-
-      // Create a directory
-      const path = process.env.FOLDER_PATH || DEFAULT_PATH;
-      await mkdir(path, { recursive: true });
-
-      const localPath = `${path}/${uuidv4()}`;
-
-      const content = filePayload.data;
-      await writeFile(localPath, content);
+      // File or image: write content
+      await writeFile(localPath, filePayload.data);
 
       const fileInserted = await filesCollection.insertOne({
         userId: user._id,
         name: filePayload.name,
         type: filePayload.type,
-        parentId: new ObjectId(filePayload.parentId) || '0',
+        parentId: filePayload.parentId || '0',
         isPublic: filePayload.isPublic || false,
         localPath,
       });
