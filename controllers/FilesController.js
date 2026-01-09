@@ -14,102 +14,92 @@ const postUpload = async (req, res) => {
   }
 
   try {
-    // Authenticate user
     const key = `auth_${token}`;
     const userId = await redisClient.get(key);
+
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const usersCollection = dbClient.db.collection('users');
     const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
+
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const {
-      name,
-      type,
-      data,
-      parentId: rawParentId,
-      isPublic = false,
-    } = req.body;
-    const parentId = rawParentId || '0';
+    const filePayload = req.body;
 
-    // Validate payload
-    if (!name) {
+    if (!filePayload.name) {
       return res.status(400).json({ error: 'Missing name' });
     }
 
-    if (!type || !FILE_TYPE.has(type)) {
+    if (!filePayload.type || !FILE_TYPE.has(filePayload.type)) {
       return res.status(400).json({ error: 'Missing type' });
     }
 
-    if (!data && type !== 'folder') {
+    if (!filePayload.data && filePayload.type !== 'folder') {
       return res.status(400).json({ error: 'Missing data' });
     }
 
     const filesCollection = dbClient.db.collection('files');
 
-    let parentFile = null;
-    if (parentId !== '0') {
-      parentFile = await filesCollection.findOne({ _id: new ObjectId(parentId) });
-      if (!parentFile) {
+    let parentFolder = null;
+    if (filePayload.parentId && filePayload.parentId !== '0') {
+      parentFolder = await filesCollection.findOne({ _id: new ObjectId(filePayload.parentId) });
+
+      if (!parentFolder) {
         return res.status(400).json({ error: 'Parent not found' });
       }
 
-      if (parentFile.type !== 'folder') {
+      if (parentFolder.type !== 'folder') {
         return res.status(400).json({ error: 'Parent is not a folder' });
       }
     }
 
-    // Base folder path
     const basePath = process.env.FOLDER_PATH || DEFAULT_PATH;
-    let folderPath;
-    if (parentFile) {
-      folderPath = parentFile.localPath;
-    } else {
-      folderPath = basePath;
+    let folderPath = basePath;
+
+    if (parentFolder) {
+      // For folders inside folders, store inside a subfolder named by parent ID
+      folderPath = `${basePath}/${parentFolder._id.toString()}`;
     }
 
     await mkdir(folderPath, { recursive: true });
 
-    const localPath = `${folderPath}/${uuidv4()}`;
-
-    // Handle folder type
-    if (type === 'folder') {
+    if (filePayload.type === 'folder') {
+      const localPath = `${folderPath}/${uuidv4()}`;
       await mkdir(localPath, { recursive: true });
 
       const folderInserted = await filesCollection.insertOne({
         userId: user._id,
-        name,
-        type,
-        parentId,
+        name: filePayload.name,
+        type: 'folder',
+        parentId: parentFolder ? parentFolder._id.toString() : '0',
         isPublic: false,
-        localPath,
       });
 
-      const insertedDoc = folderInserted.ops[0];
+      const inserted = folderInserted.ops[0];
       return res.status(201).json({
         id: folderInserted.insertedId,
-        userId: insertedDoc.userId,
-        name: insertedDoc.name,
-        type: insertedDoc.type,
-        isPublic: insertedDoc.isPublic,
-        parentId: Number(insertedDoc.parentId),
+        userId: inserted.userId,
+        name: inserted.name,
+        type: inserted.type,
+        isPublic: false,
+        parentId: Number(inserted.parentId),
       });
     }
 
-    // Handle file/image type
-    const buffer = Buffer.from(data, 'base64');
-    await writeFile(localPath, buffer);
+    // type is 'file' or 'image'
+    const localPath = `${folderPath}/${uuidv4()}`;
+    await writeFile(localPath, Buffer.from(filePayload.data, 'base64'));
 
     const fileInserted = await filesCollection.insertOne({
       userId: user._id,
-      name,
-      type,
-      parentId,
-      isPublic,
+      name: filePayload.name,
+      type: filePayload.type,
+      isPublic: filePayload.isPublic || false,
+      parentId: parentFolder ? parentFolder._id.toString() : '0',
       localPath,
     });
 
