@@ -49,7 +49,7 @@ const postUpload = async (req, res) => {
 
     const filesCollection = dbClient.db.collection('files');
     let file;
-    if (filePayload.parentId) {
+    if (filePayload.parentId && filePayload.parentId !== '0') {
       file = await filesCollection.findOne({ _id: new ObjectId(filePayload.parentId) });
       if (!file) {
         return res.status(400).json({ error: 'Parent not found' });
@@ -75,7 +75,7 @@ const postUpload = async (req, res) => {
           name: folderInserted.ops[0].name,
           type: folderInserted.ops[0].type,
           isPublic: false,
-          parentId: folderInserted.ops[0].parentId,
+          parentId: Number(folderInserted.ops[0].parentId),
         });
       }
 
