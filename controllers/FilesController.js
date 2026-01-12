@@ -76,7 +76,6 @@ const postUpload = async (req, res) => {
         name: filePayload.name,
         type: 'folder',
         parentId: parentFolder ? parentFolder._id.toString() : '0',
-        isPublic: false,
       });
 
       const inserted = folderInserted.ops[0];
@@ -98,8 +97,8 @@ const postUpload = async (req, res) => {
       userId: user._id,
       name: filePayload.name,
       type: filePayload.type,
-      isPublic: filePayload.isPublic || false,
       parentId: parentFolder ? parentFolder._id.toString() : '0',
+      isPublic: filePayload.isPublic || false,
       localPath,
     });
 
