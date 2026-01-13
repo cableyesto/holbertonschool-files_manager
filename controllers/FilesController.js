@@ -1,6 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'mongodb';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { contentType } from 'mime-types';
+import {
+  mkdir,
+  writeFile,
+  access,
+  constants,
+} from 'node:fs/promises';
 import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
 
@@ -352,6 +358,66 @@ export const putUnpublish = async (req, res) => {
     return res.status(200).json(file[0]);
   } catch (err) {
     console.error('Error making private file:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const getFile = async (req, res) => {
+  try {
+    const filesCollection = dbClient.db.collection('files');
+    const fileId = req.params.id;
+
+    if (!ObjectId.isValid(fileId)) {
+      return res.status(400).json({ error: 'Invalid file ID' });
+    }
+
+    const fileFound = await filesCollection.findOne({
+      _id: new ObjectId(fileId),
+    });
+
+    if (!fileFound) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const token = req.header('X-Token');
+
+    if (fileFound.isPublic === false && !token) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    if (fileFound.isPublic === false) {
+      const key = `auth_${token}`;
+      const userId = await redisClient.get(key);
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const usersCollection = dbClient.db.collection('users');
+      const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      // Not the owner of the file
+      if (String(fileFound.userId) !== String(user._id)) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+    }
+
+    if (fileFound.type === 'folder') {
+      return res.status(400).json({ error: 'A folder doesn\'t have content' });
+    }
+
+    try {
+      await access(fileFound.localPath, constants.F_OK);
+    } catch (err) {
+      console.error('File does not exist in filesystem');
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const fileMIME = contentType(fileFound.name);
+    res.set('Content-Type', fileMIME);
+    return res.status(200).sendFile(fileFound.localPath);
+  } catch (err) {
+    console.error('Error getting file data:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
