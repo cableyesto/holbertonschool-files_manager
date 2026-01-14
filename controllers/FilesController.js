@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'mongodb';
 import { contentType } from 'mime-types';
+import path from 'path';
 import {
   mkdir,
   writeFile,
@@ -53,6 +54,10 @@ export const postUpload = async (req, res) => {
 
     let parentFolder = null;
     if (filePayload.parentId && filePayload.parentId !== '0') {
+      if (!ObjectId.isValid(filePayload.parentId)) {
+        return res.status(400).json({ error: 'Parent not found' });
+      }
+
       parentFolder = await filesCollection.findOne({ _id: new ObjectId(filePayload.parentId) });
 
       if (!parentFolder) {
@@ -65,58 +70,57 @@ export const postUpload = async (req, res) => {
     }
 
     const basePath = process.env.FOLDER_PATH || DEFAULT_PATH;
-    let folderPath = basePath;
-
-    if (parentFolder) {
-      // For folders inside folders, store inside a subfolder named by parent ID
-      folderPath = `${basePath}/${parentFolder._id.toString()}`;
-    }
-
-    await mkdir(folderPath, { recursive: true });
+    const parentIdValue = parentFolder ? parentFolder._id : '0';
 
     if (filePayload.type === 'folder') {
-      const localPath = `${folderPath}/${uuidv4()}`;
-      await mkdir(localPath, { recursive: true });
-
-      const folderInserted = await filesCollection.insertOne({
+      const folderDoc = {
         userId: user._id,
         name: filePayload.name,
         type: 'folder',
-        parentId: parentFolder ? parentFolder._id.toString() : '0',
-      });
+        isPublic: filePayload.isPublic || false,
+        parentId: parentIdValue, // 0 ou ObjectId
+      };
 
-      const inserted = folderInserted.ops[0];
+      const { insertedId } = await filesCollection.insertOne(folderDoc);
+
+      const responseParentId = folderDoc.parentId === '0' ? 0 : folderDoc.parentId.toString();
+
       return res.status(201).json({
-        id: folderInserted.insertedId,
-        userId: inserted.userId,
-        name: inserted.name,
-        type: inserted.type,
-        isPublic: false,
-        parentId: Number(inserted.parentId),
+        id: insertedId.toString(),
+        userId: folderDoc.userId.toString(),
+        name: folderDoc.name,
+        type: folderDoc.type,
+        isPublic: folderDoc.isPublic,
+        parentId: responseParentId,
       });
     }
 
-    // type is 'file' or 'image'
-    const localPath = `${folderPath}/${uuidv4()}`;
+    await mkdir(basePath, { recursive: true });
+
+    const fileName = uuidv4();
+    const localPath = path.join(folderPath, fileName);
     await writeFile(localPath, Buffer.from(filePayload.data, 'base64'));
 
-    const fileInserted = await filesCollection.insertOne({
+    const fileDoc = {
       userId: user._id,
       name: filePayload.name,
       type: filePayload.type,
-      parentId: parentFolder ? parentFolder._id : '0',
       isPublic: filePayload.isPublic || false,
+      parentId: parentIdValue, // 0 ou ObjectId
       localPath,
-    });
+    };
 
-    const insertedFile = fileInserted.ops[0];
+    const { insertedId } = await filesCollection.insertOne(fileDoc);
+
+    const responseParentId = fileDoc.parentId === '0' ? 0 : fileDoc.parentId.toString();
+
     return res.status(201).json({
-      id: fileInserted.insertedId,
-      userId: insertedFile.userId,
-      name: insertedFile.name,
-      type: insertedFile.type,
-      isPublic: insertedFile.isPublic,
-      parentId: insertedFile.parentId,
+      id: insertedId.toString(),
+      userId: fileDoc.userId.toString(),
+      name: fileDoc.name,
+      type: fileDoc.type,
+      isPublic: fileDoc.isPublic,
+      parentId: responseParentId,
     });
   } catch (err) {
     console.error('Error uploading file:', err);
