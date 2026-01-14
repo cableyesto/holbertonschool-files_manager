@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'mongodb';
 import { contentType } from 'mime-types';
+import Bull from 'bull';
 import path from 'path';
 import {
   mkdir,
@@ -14,6 +15,7 @@ import dbClient from '../utils/db';
 const FILE_TYPE = new Set(['folder', 'file', 'image']);
 const DEFAULT_PATH = '/tmp/files_manager';
 const MAX_ITEMS = 20;
+const THUMBNAILS_WIDTH = [500, 250, 100];
 
 export const postUpload = async (req, res) => {
   const token = req.header('X-Token');
@@ -113,6 +115,15 @@ export const postUpload = async (req, res) => {
     const { insertedId } = await filesCollection.insertOne(fileDoc);
 
     const responseParentId = fileDoc.parentId === '0' ? 0 : fileDoc.parentId.toString();
+
+    if (filePayload.type === 'image') {
+      const fileQueue = new Bull('fileQueue');
+
+      await fileQueue.add({
+        fileId: insertedId.toString(),
+        userId: fileDoc.userId.toString(),
+      });
+    }
 
     return res.status(201).json({
       id: insertedId.toString(),
@@ -415,6 +426,18 @@ export const getFile = async (req, res) => {
     } catch (err) {
       console.error('File does not exist in filesystem');
       return res.status(404).json({ error: 'Not found' });
+    }
+
+    let querySize = req.query.size;
+    if (querySize) {
+      querySize = parseInt(querySize, 10);
+      if (!THUMBNAILS_WIDTH.includes(querySize)) {
+        return res.status(400).json({ error: 'Wrong thumbnail size' });
+      }
+
+      const fileMIME = contentType(`${fileFound.name}_${querySize}`);
+      res.set('Content-Type', fileMIME);
+      return res.status(200).sendFile(`${fileFound.localPath}_${querySize}`);
     }
 
     const fileMIME = contentType(fileFound.name);
